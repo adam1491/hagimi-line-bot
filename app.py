@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -141,4 +142,5 @@ if __name__ == "__main__":
     # Railway 會動態指定 PORT，所以我們從環境變數讀取
     import os
     port = int(os.environ.get('PORT', 5000))
+
     app.run(host='0.0.0.0', port=port)
