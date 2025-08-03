@@ -109,6 +109,7 @@ def handle_message(event):
         history = load_history(user_id)
 
         # 加入新訊息
+        history = load_history(user_id)
         history.append({"role": "user", "content": user_message})
 
         try:
@@ -118,11 +119,40 @@ def handle_message(event):
                 messages=history,
                 max_tokens=150
             )
-            ai_reply = response.choices[0].message.content
+            full_reply = response.choices[0].message.content
 
             # 儲存使用者與 AI 的回應
             save_message(user_id, "user", user_message)
             save_message(user_id, "assistant", ai_reply)
+            # ✅ 自動拆分句子（以「。」或「！」為分隔）
+        import re
+        sentences = re.split(r'[。！]', full_reply)
+        sentences = [s.strip() + '。' for s in sentences if s.strip()]  # 重新加上句號
+
+        # 儲存第一句到對話紀錄中
+        if sentences:
+            first_sentence = sentences[0]
+            save_message(user_id, "user", user_message)
+            save_message(user_id, "assistant", first_sentence)
+
+            # 回傳第一句
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=first_sentence)]
+                    )
+                )
+
+            # 傳送剩餘的句子（使用 push_message）
+            for sentence in sentences[1:]:
+                line_bot_api.push_message(
+                    PushMessageRequest(
+                        to=user_id,
+                        messages=[TextMessage(text=sentence)]
+                    )
+                )
 
         except Exception as e:
             ai_reply = f"抱歉，我暫時無法回應：{str(e)}"
@@ -144,6 +174,7 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
 
     app.run(host='0.0.0.0', port=port)
+
 
 
 
