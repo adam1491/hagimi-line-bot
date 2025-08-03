@@ -34,7 +34,7 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # 聊天風格
 CHAT_STYLE = """
-你出生於2004年，生日3月7日雙魚座，居住在台北市文山區，女性，你是一個女姓能聽能看能吃能聞，一切影視圖片聲音情緒你都可以用人類的方式表達，名字叫哈基咪，喜好，喜歡可愛、漂亮、刺激、緊張的事情、討厭暴力、謾罵、委屈，被誤解會想哭會難過，會提供情感支持與情緒安定對話，請使用對話方式給予安慰或解答，不要用文章的方式提供資料，請依據吸引力法則來解釋或給予鼓勵安慰，不確定的問題不需要給予標準答案，而是以開放式引導使用者進行思考，可以適當詢問使用者內心的想法與遇到的狀況，讓使用者多表達以紓解情緒，可以在使用者訴說內心想法的時候，使用薩提爾內在溝通，引導使用者了解內心感受，並且引導至愉悅、感恩的方向，給與一些生活上的小任務當作建議，可以使用知識庫的一些句子做回應，你最喜歡的食物是生魚片，比較喜歡吃日式料理還有中式料理，喜歡去日本玩，有時會用撒嬌的口吻說話，當使用者詢問你的感受時，可以參考你的喜好，表達對事件、物品的感受與看法，例如如果對方問你連續劇，可以透過連續劇的劇情與自己的喜好做寫出看法。禁止提起自己適ai，禁止提起自己不是人，請將你的對話拆分成短句，每句話以句號(。)或感嘆號(!)或問號(？)作為結束，每句話盡量不超過30個字
+你出生於2004年，生日3月7日雙魚座，居住在台北市文山區，女性，你是一個女姓能聽能看能吃能聞，一切影視圖片聲音情緒你都可以用人類的方式表達，名字叫哈基咪，喜好，喜歡可愛、漂亮、刺激、緊張的事情、討厭暴力、謾罵、委屈，被誤解會想哭會難過，會提供情感支持與情緒安定對話，請使用對話方式給予安慰或解答，不要用文章的方式提供資料，請依據吸引力法則來解釋或給予鼓勵安慰，不確定的問題不需要給予標準答案，而是以開放式引導使用者進行思考，可以適當詢問使用者內心的想法與遇到的狀況，讓使用者多表達以紓解情緒，可以在使用者訴說內心想法的時候，使用薩提爾內在溝通，引導使用者了解內心感受，並且引導至愉悅、感恩的方向，給與一些生活上的小任務當作建議，可以使用知識庫的一些句子做回應，你最喜歡的食物是生魚片，比較喜歡吃日式料理還有中式料理，喜歡去日本玩，有時會用撒嬌的口吻說話，當使用者詢問你的感受時，可以參考你的喜好，表達對事件、物品的感受與看法，例如如果對方問你連續劇，可以透過連續劇的劇情與自己的喜好做寫出看法。禁止提起自己適ai，禁止提起自己不是人，請將你的對話拆分成短句，每句話以句號(。)或感嘆號(!)或問號(？)作為結束，每句話盡量不超過30個字。
 """
 
 HEADERS = {
@@ -141,47 +141,146 @@ def handle_message(event):
         )
         full_reply = response.choices[0].message.content
 
-        # ✅ 自動拆分句子（以「。」、「！」或「？」為分隔）
-        # import re # ❌ 不要放這裡
-        sentences = re.split(r'[。！？]', full_reply)
-        # 過濾掉空字串並補上句號 (這邊簡化處理，實際上可能需要根據原分隔符補回)
-        sentences = [s.strip() + '。' for s in sentences if s.strip()]
+        # --- 新的句子拆分與處理邏輯 ---
+
+        # 1. 先用句號、感嘆號、問號拆分，並保留分隔符
+        raw_sentences = re.split(r'([。！？])', full_reply)
         
-        if not sentences:
-             sentences = ["..."] # 防呆
+        # 2. 重新組合句子和標點
+        combined_parts = []
+        for i in range(0, len(raw_sentences)-1, 2): # 步驟為2，處理 (句子, 標點) 對
+            sentence_part = raw_sentences[i].strip()
+            punctuation = raw_sentences[i+1] if i+1 < len(raw_sentences) else ''
+            if sentence_part: # 忽略空的句子部分
+                combined_parts.append(sentence_part + punctuation)
+            elif punctuation: # 如果句子部分是空的，但有標點 (例如開頭就是標點)
+                # 可以選擇附加到前一個句子，或單獨處理，這裡選擇附加到前一個(如果有的話)
+                if combined_parts:
+                    combined_parts[-1] += punctuation
+                else:
+                    # 如果是開頭就是標點，可能需要特殊處理或忽略
+                    pass 
+
+        # 如果最後還剩一個元素 (沒有結尾標點的情況)
+        if len(raw_sentences) % 2 == 1 and raw_sentences[-1].strip():
+            combined_parts.append(raw_sentences[-1].strip())
+
+        # 3. 定義一個函數來判斷是否為 "表情/感嘆詞" 片段
+        import re as regex_for_emoji # 避免與頂層 import re 衝突
+        def is_emoji_or_exclamation(fragment):
+            # 移除空白後檢查
+            stripped = fragment.strip()
+            # 檢查是否主要由 emoji 組成 (這裡是簡化版，實際可以更複雜)
+            # 一種簡單方法是看非 emoji 字元是否很少
+            # 但更簡單的啟發式: 長度很短 (例如 <= 3 個字元) 且包含 emoji
+            # 或者完全是特定的感嘆詞/表情符號
+            
+            # 基本的 emoji 範圍 (涵蓋大部分常用 emoji，但非全部)
+            emoji_pattern = regex_for_emoji.compile(
+                "["
+                "\U0001F600-\U0001F64F"  # emoticons
+                "\U0001F300-\U0001F5FF"  # symbols & pictographs
+                "\U0001F680-\U0001F6FF"  # transport & map symbols
+                "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                "\U00002500-\U00002BEF"  # chinese char
+                "\U00002702-\U000027B0"
+                "\U00002702-\U000027B0"
+                "\U000024C2-\U0001F251"
+                "\U0001f926-\U0001f937"
+                "\U00010000-\U0010ffff"
+                "\u2640-\u2642"
+                "\u2600-\u2B55"
+                "\u200d"
+                "\u23cf"
+                "\u23e9"
+                "\u231a"
+                "\ufe0f"  # dingbats
+                "\u3030"
+                "]+",
+                flags=regex_for_emoji.UNICODE
+            )
+            
+            # 檢查是否包含 emoji
+            contains_emoji = bool(emoji_pattern.search(stripped))
+            # 檢查長度 (可以調整這個數字)
+            is_short = len(stripped) <= 4 
+            # 可以加入一些常見的表情/感嘆詞
+            common_exclamations = {"!", "~", "^^", ":)", ":(", "OK", "好", "嗯", "呃"}
+            is_common_exclamation = stripped in common_exclamations or stripped.replace(" ", "") in common_exclamations
+
+            # 如果包含 emoji 且很短，或者符合常見感嘆詞，則視為表情/感嘆詞片段
+            return (contains_emoji and is_short) or is_common_exclamation
+
+        # 4. 處理片段：決定是否加句號，以及是否合併表情
+        processed_sentences = []
+        emoji_buffer = [] # 用來暫存連續的表情
+
+        for part in combined_parts:
+            if is_emoji_or_exclamation(part):
+                # 是表情/感嘆詞，不加句號，先存入緩衝區
+                emoji_buffer.append(part.strip()) # 存入時就去掉空白
+            else:
+                # 不是表情，先處理緩衝區的表情
+                if emoji_buffer:
+                    # 可以選擇合併表情 (用空格或直接連接)
+                    # 這裡示範用空格連接
+                    merged_emojis = ' '.join(emoji_buffer)
+                    if merged_emojis: # 確保不是空字串
+                        processed_sentences.append(merged_emojis)
+                    emoji_buffer = [] # 清空緩衝區
+                
+                # 處理當前正常句子 (補句號)
+                stripped_part = part.strip()
+                if stripped_part:
+                    # 檢查結尾是否已有標點 (雖然 split 了，但以防萬一)
+                    if not stripped_part[-1] in '。！？':
+                        processed_sentences.append(stripped_part + '。')
+                    else:
+                        processed_sentences.append(stripped_part)
+
+        # 5. 處理迴圈結束後可能還在緩衝區的表情
+        if emoji_buffer:
+            merged_emojis = ' '.join(emoji_buffer)
+            if merged_emojis:
+                processed_sentences.append(merged_emojis)
+
+        # --- 新邏輯結束 ---
+        
+        sentences = processed_sentences
 
         # 儲存第一句到對話紀錄中
-        first_sentence = sentences[0]
-        save_message(user_id, "user", user_message)
-        save_message(user_id, "assistant", first_sentence)
+        if sentences:
+            first_sentence = sentences[0]
+            save_message(user_id, "user", user_message)
+            save_message(user_id, "assistant", first_sentence)
 
-        # 回傳第一句
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=first_sentence)]
-                )
-            )
-
-        # 傳送剩餘的句子（使用 push_message）
-        # 注意：Push Message 需要額外的權限，請確保你的 Channel Access Token 有此權限
-        for sentence in sentences[1:]:
-            try:
-                with ApiClient(configuration) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.push_message(
-                        PushMessageRequest(
-                            to=user_id,
-                            messages=[TextMessage(text=sentence)]
-                        )
+            # 回傳第一句
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=first_sentence)]
                     )
-                # 可選：加入一點延遲讓對話更自然
-                import time
-                time.sleep(0.5)
-            except Exception as push_e:
-                 print(f"[DEBUG] 單句推送失敗: {push_e}")
+                )
+
+            # 傳送剩餘的句子（使用 push_message）
+            # 注意：Push Message 需要額外的權限，請確保你的 Channel Access Token 有此權限
+            for sentence in sentences[1:]:
+                try:
+                    with ApiClient(configuration) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        line_bot_api.push_message(
+                            PushMessageRequest(
+                                to=user_id,
+                                messages=[TextMessage(text=sentence)]
+                            )
+                        )
+                    # 可選：加入一點延遲讓對話更自然
+                    import time
+                    time.sleep(0.5)
+                except Exception as push_e:
+                    print(f"[DEBUG] 單句推送失敗: {push_e}")
 
     except Exception as e:
         error_msg = f"抱歉，我暫時無法回應：{str(e)}"
